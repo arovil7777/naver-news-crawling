@@ -4,6 +4,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
+from tqdm import tqdm
 
 
 def setup_driver(driver_path):
@@ -67,26 +68,32 @@ def crawl_all_categories(driver, base_url):
     print("상위 카테고리 수집 시작...")
     categories = collect_category_urls(driver, base_url)
 
-    all_categories = []
+    all_articles = []
     print("하위 카테고리 수집 중...")
-    for category in categories:
+    for category in tqdm(categories, desc="상위 카테고리 진행", unit="카테고리"):
         # "랭킹" 카테고리의 경우 하위 카테고리가 존재하지 않음
         if "ranking" in category["url"]:
-            all_categories.append(category)
+            # all_categories.append(category)
             continue
 
         # 하위 카테고리 수집
         sub_categories = collect_sub_category_urls(driver, category)
 
-        for sub_category in sub_categories:
+        for sub_category in tqdm(
+            sub_categories,
+            desc=f"{category['name']} - 하위 카테고리 진행",
+            unit="하위 카테고리",
+            leave=False,
+        ):
             articles = crawl_articles(driver, sub_category["url"])
+            all_articles.extend(articles)
 
         # 상위 카테고리와 하위 카테고리 병합
         # category["sub_categories"] = sub_categories
         # all_categories.append(category)
 
     # return all_categories
-    return articles
+    return all_articles
 
 
 def crawl_articles(driver, url):

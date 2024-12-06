@@ -1,6 +1,7 @@
 from app.crawling import setup_driver, crawl_all_categories, crawl_article_content
 from app.processing import save_articles_to_db
 from app.config import Config
+from tqdm import tqdm
 
 
 def main():
@@ -13,7 +14,7 @@ def main():
 
         articles = crawl_all_categories(driver, article_list_url)
 
-        for article in articles:
+        for article in tqdm(articles, desc="기사 본문 크롤링 진행", unit="기사"):
             content_data = crawl_article_content(driver, article["url"])
             article.update(content_data)
 
