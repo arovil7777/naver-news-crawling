@@ -7,7 +7,7 @@ def save_articles_to_db(data, collection_name="crawling_contents"):
     collection = db.get_collection(collection_name)
 
     for item in data:
-        # 중복 방지
+        # 중복 방지 (기사 url)
         if not collection.find_one({"url": item["url"]}):
             collection.insert_one(item)
 

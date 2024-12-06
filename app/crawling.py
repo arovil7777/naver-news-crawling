@@ -18,6 +18,77 @@ def setup_driver(driver_path):
     return driver
 
 
+def collect_category_urls(driver, base_url):
+    # 상위 카테고리 탐색
+    driver.get(base_url)
+    categories = driver.find_elements(By.CSS_SELECTOR, "li.Nlist_item > a")
+
+    category_urls = []
+    for idx, category in enumerate(categories):
+        try:
+            # 정치 ~ 랭킹 카테고리만 조회
+            if idx == 0 or idx > 7:
+                continue
+
+            # 상위 카테고리 정보 수집
+            url = category.get_attribute("href")
+            name = category.text
+
+            category_urls.append({"name": name, "url": url})
+        except Exception as e:
+            print(f"Error collecting category: {e}")
+
+    return category_urls
+
+
+def collect_sub_category_urls(driver, category):
+    sub_category_urls = []
+
+    try:
+        # 상위 카테고리 페이지로 이동
+        driver.get(category["url"])
+
+        # 하위 카테고리 탐색
+        sub_categories = driver.find_elements(By.CSS_SELECTOR, "li.ct_snb_nav_item > a")
+
+        for sub_category in sub_categories:
+            sub_url = (sub_category.get_attribute("href") + f"?date={datetime.now().strftime('%Y%m%d')}")
+            sub_name = sub_category.get_attribute("textContent")
+
+            sub_category_urls.append({"name": sub_name, "url": sub_url})
+    except Exception as e:
+        print(f"Error collecting sub categories for {category['name']}: {e}")
+
+    return sub_category_urls
+
+
+def crawl_all_categories(driver, base_url):
+    # 상위 카테고리 수집
+    print("상위 카테고리 수집 시작...")
+    categories = collect_category_urls(driver, base_url)
+
+    all_categories = []
+    print("하위 카테고리 수집 중...")
+    for category in categories:
+        # "랭킹" 카테고리의 경우 하위 카테고리가 존재하지 않음
+        if "ranking" in category["url"]:
+            all_categories.append(category)
+            continue
+
+        # 하위 카테고리 수집
+        sub_categories = collect_sub_category_urls(driver, category)
+
+        for sub_category in sub_categories:
+            articles = crawl_articles(driver, sub_category["url"])
+
+        # 상위 카테고리와 하위 카테고리 병합
+        # category["sub_categories"] = sub_categories
+        # all_categories.append(category)
+
+    # return all_categories
+    return articles
+
+
 def crawl_articles(driver, url):
     # 뉴스 기사 목록 크롤링
     driver.get(url)
@@ -37,7 +108,7 @@ def crawl_articles(driver, url):
 
                 # 로드된 컨텐츠 대기
                 WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.CLASS_NAME,"newsct_wrapper"))
+                    EC.presence_of_element_located((By.CLASS_NAME, "newsct_wrapper"))
                 )
             except Exception as e:
                 break
@@ -48,12 +119,8 @@ def crawl_articles(driver, url):
         )
 
         # 카테고리 정보 추출
-        category1 = driver.find_element(
-            By.CSS_SELECTOR, "li.Nlist_item.is_active > a > span"
-        ).text
-        category2 = driver.find_element(
-            By.CSS_SELECTOR, "li.ct_snb_nav_item.is_selected > a"
-        ).get_attribute("textContent")
+        category1 = driver.find_element(By.CSS_SELECTOR, "li.Nlist_item.is_active > a > span").text
+        category2 = driver.find_element(By.CSS_SELECTOR, "li.ct_snb_nav_item.is_selected > a").get_attribute("textContent")
 
         # 기사 요소 찾기
         articles_elements = driver.find_elements(By.CSS_SELECTOR, ".sa_text")

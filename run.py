@@ -1,19 +1,17 @@
-from app.crawling import setup_driver, crawl_articles, crawl_article_content
+from app.crawling import setup_driver, crawl_all_categories, crawl_article_content
 from app.processing import save_articles_to_db
 from app.config import Config
-from datetime import datetime
 
 
 def main():
     print("크롤링을 시작합니다.")
-
     driver = setup_driver(Config.SELENIUM_DRIVER_PATH)
 
-    article_list_url = (
-        f"https://news.naver.com/breakingnews/section/100/264?date={datetime.now().strftime('%Y%m%d')}"  # 네이버 뉴스 (정치)
-    )
+    article_list_url = "https://news.naver.com/"
     try:
-        articles = crawl_articles(driver, article_list_url)
+        # articles = crawl_articles(driver, article_list_url)
+
+        articles = crawl_all_categories(driver, article_list_url)
 
         for article in articles:
             content_data = crawl_article_content(driver, article["url"])
