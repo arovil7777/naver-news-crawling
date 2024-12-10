@@ -3,7 +3,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import parmap
+import re
+import traceback
 from multiprocessing import Pool, cpu_count
+from app.templates.template_select import get_template
 from app.config import logger
 from datetime import datetime
 from tqdm import tqdm
@@ -23,6 +27,19 @@ def setup_driver():
     return driver
 
 
+def parse_date(date_str):
+    if not date_str:
+        return
+
+    formats = ["%Y.%m.%d. %p %I:%M", "%Y-%m-%d %H:%M:%S"]
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"지원하지 않는 날짜 형식: {date_str}")
+
+
 def crawl_article_content_with_driver(article):
     # 독립적인 WebDriver를 사용해 기사 본문 크롤링
     url = article["url"]
@@ -31,45 +48,69 @@ def crawl_article_content_with_driver(article):
 
     try:
         driver.get(url)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "newsct_wrapper"))
+        content_url = driver.current_url
+        template = get_template(content_url)
+
+        if not template:
+            logger.error(f"템플릿을 찾을 수 없습니다: {url}")
+            return article_data
+
+        article_id = driver.execute_script(template["article_id_selector"])
+        if not article_id:
+            match = re.search(r"/article(?:/\d+)?/(\d+)", content_url)
+            if match:
+                article_id = match.group(1)
+
+        content_element = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.CLASS_NAME, template["content_selector"])
+            )
+        )
+        content = content_element.find_element(By.TAG_NAME, "article").get_attribute(
+            "textContent"
         )
 
-        content_element = driver.find_element(By.CLASS_NAME, "newsct_wrapper")
-        content = content_element.find_element(By.TAG_NAME, "article").text
         writer = "작성자 정보 없음"
-
-        for class_name in ["media_and_head_jounalist_name", "byline_p"]:
-            elements = content_element.find_elements(By.CLASS_NAME, class_name)
-            if elements:
-                writer = elements[0].text
+        for writer_selector in template["writer_selector"]:
+            writer_elements = driver.find_elements(By.CLASS_NAME, writer_selector)
+            if writer_elements:
+                writer = writer_elements[0].text
                 break
 
-        published_at = content_element.find_element(
-            By.CLASS_NAME, "_ARTICLE_DATE_TIME"
-        ).get_attribute("data-date-time")
-        updated_at_element = content_element.find_elements(
-            By.CLASS_NAME, "_ARTICLE_MODIFY_DATE_TIME"
-        )
+        date_elements = driver.find_elements(By.CLASS_NAME, template["date_selector"])
+        for date in date_elements:
+            date_element = (
+                date.find_elements(By.TAG_NAME, "span")
+                if template["site"] == "n.news.naver.com"
+                else date.find_elements(By.TAG_NAME, "em")
+            )
+            published_at = (
+                date_element[0]
+                .get_attribute(template["date_attribute"])
+                .replace("오전", "AM")
+                .replace("오후", "PM")
+            )
+            updated_at = (
+                date_element[1]
+                .get_attribute(template["updated_attribute"])
+                .replace("오전", "AM")
+                .replace("오후", "PM")
+                if len(date_element) > 1
+                else None
+            )
 
         article_data.update(
             {
-                "article_id": driver.execute_script("return article.articleId"),
+                "article_id": article_id,
                 "content": content,
                 "writer": writer,
-                "published_at": datetime.strptime(published_at, "%Y-%m-%d %H:%M:%S"),
-                "updated_at": (
-                    datetime.strptime(
-                        updated_at_element[0].get_attribute("data-modify-date-time"),
-                        "%Y-%m-%d %H:%M:%S",
-                    )
-                    if updated_at_element
-                    else None
-                ),
+                "published_at": parse_date(published_at),
+                "updated_at": parse_date(updated_at),
             }
         )
     except Exception as e:
         logger.error(f"기사 본문 수집 중 에러 발생 {url}: {e}")
+        logger.debug(f"전체 에러 스택 트레이스: {traceback.format_exc()}")
     finally:
         driver.quit()
 
@@ -79,19 +120,8 @@ def crawl_article_content_with_driver(article):
 def parallel_crawl_article_content(articles):
     # 멀티프로세싱으로 기사 본문 크롤링
     logger.info(f"총 {len(articles)}개의 기사 본문 크롤링 시작.")
-    results = []
-
-    cpuCount = cpu_count() - 2
-    logger.info(f"멀티 프로세싱 CPU 코어 개수: {cpuCount} / {cpu_count()}\n")
-    with Pool(processes=cpuCount) as pool:
-        for result in tqdm(
-            pool.imap_unordered(crawl_article_content_with_driver, articles),
-            total=len(articles),
-            desc="기사 본문 크롤링 진행",
-            unit="기사",
-        ):
-            results.append(result)
-    logger.info("\n기사 본문 크롤링 완료")
+    results = parmap.map(crawl_article_content_with_driver, articles, pm_pbar=True)
+    logger.info("기사 본문 크롤링 완료")
     return results
 
 
@@ -104,7 +134,7 @@ def collect_category_urls(driver, base_url):
     for idx, category in enumerate(categories):
         try:
             # 정치 ~ 랭킹 카테고리만 조회
-            if idx == 0 or idx > 1:
+            if idx == 0 or idx > 7:
                 continue
 
             # 상위 카테고리 정보 수집
@@ -145,7 +175,7 @@ def collect_sub_category_urls(driver, category):
 
 def crawl_category_articles(category):
     driver = setup_driver()
-    logger.info(f"크롤링 시작: {category['name']}\n")
+    logger.info(f"크롤링 시작: {category['name']}")
     sub_categories = collect_sub_category_urls(driver, category)
 
     all_articles = []
@@ -166,8 +196,9 @@ def crawl_all_categories(driver, base_url):
     categories = collect_category_urls(driver, base_url)
 
     all_articles = []
-    cpuCount = cpu_count() - 2
-    with Pool(processes=cpuCount) as pool:
+    cpu_count_adjusted = max(1, cpu_count() - 2)
+    logger.info(f"멀티 프로세싱 CPU 코어 개수: {cpu_count_adjusted} / {cpu_count()}")
+    with Pool(processes=cpu_count_adjusted) as pool:
         results = pool.starmap(
             crawl_category_articles, [(category,) for category in categories]
         )

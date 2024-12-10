@@ -15,7 +15,6 @@ def main():
     try:
         # 1. 카테고리 별로 기사 목록 크롤링
         articles = crawl_all_categories(driver, article_list_url)
-        print("\n")
         logger.info(f"수집된 기사 총 개수: {len(articles)}")
 
         # 2. 각 기사의 본문 데이터 크롤링
