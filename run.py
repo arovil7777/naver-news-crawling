@@ -3,7 +3,7 @@ from app.crawling import (
     crawl_all_categories,
     parallel_crawl_article_content,
 )
-from app.processing import save_articles_to_db, save_articles_to_csv
+from app.processing import save_articles_to_db, save_articles_to_csv, send_csv_to_hdfs
 from app.config import logger
 
 
@@ -29,8 +29,13 @@ def main():
             logger.info(f"크롤링 완료. 총 {len(articles)}개의 기사 수집")
 
             # 데이터 저장 (MongoDB 또는 CSV)
-            save_articles_to_csv(articles)
-            # save_articles_to_db(articles)
+            local_csv_path = save_articles_to_csv(articles)  # 로컬 CSV 파일에 크롤링 데이터 저장
+            # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
+
+            if local_csv_path:
+                # # HDFS로 전송
+                send_csv_to_hdfs(local_csv_path)
+
         else:
             logger.debug("크롤링 결과가 없습니다.")
 

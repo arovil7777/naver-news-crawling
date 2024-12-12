@@ -20,6 +20,9 @@ class Config:
     SELENIUM_DRIVER_PATH = os.getenv(
         "SELENIUM_DRIVER_PATH", "/usr/local/bin/chromedriver"
     )
+    HDFS_URL = os.getenv("HDFS_URL", "http://localhost:9870")
+    HDFS_USER = os.getenv("HDFS_USER", "hadoop")
+    HDFS_DIR = os.getenv("HDFS_DIR", "/data")
 
 
 # 로깅 설정
