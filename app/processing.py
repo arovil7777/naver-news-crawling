@@ -43,7 +43,7 @@ def save_articles_to_csv(data):
         return None
 
 
-def load_articles_to_csv(file_path):
+def load_articles_from_csv(file_path):
     # CSV 파일에서 기사 데이터 로드
     try:
         return load_from_csv(file_path)
